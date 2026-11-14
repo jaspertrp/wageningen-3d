@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wageningen 3D</title>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.147.0/Build/Cesium/Cesium.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.147.0/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#f4f1ea; --muted:#b9b3a6; --panel:rgba(22,26,24,.78); --line:rgba(255,255,255,.12); --accent:#c9e27a; }
+  html, body, #cesium { margin:0; width:100%; height:100%; overflow:hidden; background:#0d0f0e; font-family:Inter, system-ui, sans-serif; }
+  .cesium-viewer-bottom { left:auto; right:8px; }
+  #panel { position:absolute; top:16px; left:16px; width:280px; max-height:calc(100% - 32px); overflow:auto; color:var(--ink);
+           background:var(--panel); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border:1px solid var(--line);
+           border-radius:14px; padding:18px 18px 14px; box-shadow:0 10px 40px rgba(0,0,0,.35); }
+  h1 { font-family:Fraunces, Georgia, serif; font-weight:650; font-size:28px; letter-spacing:-.01em; margin:0; line-height:1.05; }
+  .sub { color:var(--muted); font-size:12.5px; margin:6px 0 14px; line-height:1.45; }
+  .sec { border-top:1px solid var(--line); padding-top:12px; margin-top:12px; }
+  .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin-bottom:8px; font-weight:600; }
+  .views { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  button.v { all:unset; cursor:pointer; font-size:12.5px; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.06); border:1px solid var(--line); transition:.15s; }
+  button.v:hover { background:rgba(201,226,122,.16); border-color:rgba(201,226,122,.5); }
+  label.t { display:flex; align-items:center; gap:8px; font-size:13px; margin:6px 0; cursor:pointer; }
+  input[type=checkbox] { accent-color:var(--accent); }
+  select, input[type=range] { width:100%; accent-color:var(--accent); }
+  select { background:rgba(255,255,255,.06); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:7px; font:inherit; font-size:13px; }
+  select option { color:#111; }
+  .row { display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted); }
+  #legend { margin-top:8px; display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11.5px; color:var(--muted); }
+  #legend span i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+  #info { position:absolute; right:16px; top:16px; width:250px; color:var(--ink); background:var(--panel); backdrop-filter:blur(14px);
+          border:1px solid var(--line); border-radius:12px; padding:14px 16px; font-size:12.5px; display:none; }
+  #info b { font-family:Fraunces, serif; font-size:16px; font-weight:500; display:block; margin-bottom:6px; }
+  #info table { width:100%; border-collapse:collapse; } #info td { padding:3px 0; } #info td:first-child { color:var(--muted); }
+  .src { font-size:10.5px; color:var(--muted); line-height:1.5; margin-top:12px; }
+  .src a { color:var(--muted); }
+</style>
+</head>
+<body>
+<div id="cesium"></div>
+<div id="panel">
+  <h1>Wageningen<br>in 3D</h1>
+  <div class="sub">De hele gemeente, van de Wageningse Berg tot de uiterwaarden. Hoogte, gebouwen en luchtfoto uit open data.</div>
+
+  <div class="sec"><div class="lbl">Uitzichtpunten</div>
+    <div class="views" id="views"></div>
+  </div>
+
+  <div class="sec"><div class="lbl">Lagen</div>
+    <label class="t"><input type="checkbox" id="tgBuildings" checked> Gebouwen (3D BAG)</label>
+    <label class="t"><input type="checkbox" id="tgTrees" checked> Bomen (± 70.000)</label>
+    <label class="t"><input type="checkbox" id="tgBorder" checked> Gemeentegrens</label>
+    <label class="t"><input type="checkbox" id="tgShadows" checked> Schaduwen</label>
+  </div>
+
+  <div class="sec"><div class="lbl">Gebouwen kleuren op</div>
+    <select id="colorBy">
+      <option value="none">Neutraal</option>
+      <option value="year">Bouwjaar</option>
+      <option value="floors">Aantal bouwlagen</option>
+      <option value="roof">Daktype</option>
+    </select>
+    <div id="legend"></div>
+  </div>
+
+  <div class="sec"><div class="lbl">Zon</div>
+    <div class="row"><span>Tijd</span><span id="timeLbl"></span></div>
+    <input type="range" id="time" min="5" max="22" step="0.25" value="15">
+    <div class="row" style="margin-top:6px"><span>Datum</span><span id="dateLbl"></span></div>
+    <input type="range" id="date" min="0" max="364" step="1" value="171">
+  </div>
+
+  <div class="src">Bronnen: hoogte <a href="https://www.ahn.nl" target="_blank">AHN4</a> via PDOK ·
+    gebouwen <a href="https://3dbag.nl" target="_blank">3DBAG</a> (TU Delft &amp; 3DGI, CC BY 4.0) ·
+    luchtfoto <a href="https://www.beeldmateriaal.nl" target="_blank">Beeldmateriaal Nederland</a> (CC BY 4.0) ·
+    bomen Gemeente Wageningen (bomenregister, boomkronen) · grens Kadaster (BRK).</div>
+</div>
+<div id="info"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const TERRAIN_URL = params.get("terrain") || "tiles/terrain";
+const TREES_URL = params.get("trees") || "tiles/trees/tileset.json";
+const BAG_URL = "https://data.3dbag.nl/v20250903/cesium3dtiles/lod22/tileset.json";
+Cesium.Ion.defaultAccessToken = "";
+
+(async () => {
+  const viewer = new Cesium.Viewer("cesium", {
+    baseLayer: Cesium.ImageryLayer.fromProviderAsync(
+      Cesium.TileMapServiceImageryProvider.fromUrl(Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"))),
+    terrainProvider: await Cesium.CesiumTerrainProvider.fromUrl(TERRAIN_URL, { requestVertexNormals: true }),
+    baseLayerPicker:false, geocoder:false, homeButton:false, sceneModePicker:false, navigationHelpButton:false,
+    animation:false, timeline:false, fullscreenButton:false, infoBox:false, selectionIndicator:false,
+    shadows:true, terrainShadows: Cesium.ShadowMode.RECEIVE_ONLY, msaaSamples:4,
+  });
+  window.viewer = viewer;
+  const scene = viewer.scene, globe = scene.globe;
+
+  // PDOK aerial photo (8 cm, latest year)
+  viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+    url: "https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/Actueel_orthoHR/EPSG:3857/{z}/{x}/{y}.jpeg",
+    tilingScheme: new Cesium.WebMercatorTilingScheme(), maximumLevel: 20, minimumLevel: 6,
+    rectangle: Cesium.Rectangle.fromDegrees(3.2, 50.7, 7.3, 53.6),
+    credit: "Luchtfoto: Beeldmateriaal Nederland / PDOK" }));
+
+  globe.enableLighting = true;
+  globe.depthTestAgainstTerrain = true;
+  globe.maximumScreenSpaceError = 1.5;
+  scene.fog.enabled = true; scene.fog.density = 1.2e-4;
+  scene.highDynamicRange = true;
+  scene.postProcessStages.fxaa.enabled = true;
+  viewer.shadowMap.softShadows = true; viewer.shadowMap.size = 4096; viewer.shadowMap.darkness = 0.45;
+  viewer.shadowMap.maximumDistance = 2000;
+
+  // Buildings: 3DBAG LoD2.2, kept to the modelled area
+  const bag = await Cesium.Cesium3DTileset.fromUrl(BAG_URL, {
+    maximumScreenSpaceError: 8, shadows: Cesium.ShadowMode.CAST_ONLY, dynamicScreenSpaceError: true });
+  bag.clippingPolygons = new Cesium.ClippingPolygonCollection({ inverse: true, polygons: [ new Cesium.ClippingPolygon({
+    positions: Cesium.Cartesian3.fromDegreesArray([5.5915,51.9218, 5.7502,51.9214, 5.7509,52.0103, 5.5916,52.0107]) }) ] });
+  bag.colorBlendMode = Cesium.Cesium3DTileColorBlendMode.REPLACE;  // our colours instead of 3DBAG's built-in brown
+  scene.primitives.add(bag);
+
+  // Trees: one instanced model per tree, scaled to its real crown and height
+  const trees = await Cesium.Cesium3DTileset.fromUrl(TREES_URL, { maximumScreenSpaceError: 16, shadows: Cesium.ShadowMode.CAST_ONLY });
+  scene.primitives.add(trees);
+  document.getElementById("tgTrees").onchange = e => trees.show = e.target.checked;
+
+  // Municipality border
+  const gem = await Cesium.GeoJsonDataSource.load("data/gemeente.geojson", { clampToGround: true });
+  for (const e of gem.entities.values) {
+    if (!e.polygon) continue;
+    const h = e.polygon.hierarchy.getValue();
+    gem.entities.add({ polyline: { positions: [...h.positions, h.positions[0]], width: 3, clampToGround: true,
+      material: new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.fromCssColorString("#c9e27a"), dashLength: 24 }) } });
+    e.show = false;
+  }
+  viewer.dataSources.add(gem);
+
+  // Styles
+  const STYLES = {
+    none: { style: { color: "color('#eeeae2')" }, legend: [] },
+    year: { style: { color: { conditions: [
+        ["${oorspronkelijkbouwjaar} === undefined || ${oorspronkelijkbouwjaar} > 3000", "color('#cfcac0')"],
+        ["${oorspronkelijkbouwjaar} < 1900", "color('#7a3b2e')"], ["${oorspronkelijkbouwjaar} < 1945", "color('#b5553c')"],
+        ["${oorspronkelijkbouwjaar} < 1970", "color('#e08e45')"], ["${oorspronkelijkbouwjaar} < 1990", "color('#f2c45a')"],
+        ["${oorspronkelijkbouwjaar} < 2010", "color('#9cc5a1')"], ["true", "color('#3f8f8a')"] ] } },
+      legend: [["< 1900","#7a3b2e"],["1900–1944","#b5553c"],["1945–1969","#e08e45"],["1970–1989","#f2c45a"],["1990–2009","#9cc5a1"],["2010+","#3f8f8a"]] },
+    floors: { style: { color: { conditions: [
+        ["${b3_bouwlagen} === undefined || ${b3_bouwlagen} > 1000", "color('#cfcac0')"],
+        ["${b3_bouwlagen} <= 1", "color('#efe6c8')"], ["${b3_bouwlagen} <= 2", "color('#d9c58f')"],
+        ["${b3_bouwlagen} <= 4", "color('#b98f5a')"], ["${b3_bouwlagen} <= 7", "color('#8a5a3b')"], ["true", "color('#4b2e22')"] ] } },
+      legend: [["1","#efe6c8"],["2","#d9c58f"],["3–4","#b98f5a"],["5–7","#8a5a3b"],["8+","#4b2e22"]] },
+    roof: { style: { color: { conditions: [
+        ["${b3_dak_type} === 'slanted'", "color('#b5553c')"], ["${b3_dak_type} === 'multiple horizontal'", "color('#6f8fa8')"],
+        ["${b3_dak_type} === 'single horizontal'", "color('#a9bfd0')"], ["${b3_dak_type} === 'horizontal'", "color('#a9bfd0')"], ["true", "color('#cfcac0')"] ] } },
+      legend: [["schuin","#b5553c"],["plat","#a9bfd0"],["meerdere platte delen","#6f8fa8"]] },
+  };
+  const legendEl = document.getElementById("legend");
+  function applyStyle(k) {
+    bag.style = new Cesium.Cesium3DTileStyle(STYLES[k].style);
+    legendEl.innerHTML = STYLES[k].legend.map(([t, c]) => `<span><i style="background:${c}"></i>${t}</span>`).join("");
+  }
+  applyStyle("none");
+  document.getElementById("colorBy").onchange = e => applyStyle(e.target.value);
+
+  // Toggles
+  document.getElementById("tgBuildings").onchange = e => bag.show = e.target.checked;
+  document.getElementById("tgBorder").onchange = e => gem.show = e.target.checked;
+  document.getElementById("tgShadows").onchange = e => viewer.shadows = e.target.checked;
+
+  // Sun: date + time slider (local time, Europe/Amsterdam)
+  const tEl = document.getElementById("time"), dEl = document.getElementById("date");
+  function setSun() {
+    const doy = +dEl.value, h = +tEl.value;
+    const d = new Date(Date.UTC(2026, 0, 1) + doy * 864e5);
+    const dst = doy > 87 && doy < 298;  // rough CEST window
+    const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0) + (h - (dst ? 2 : 1)) * 36e5);
+    viewer.clock.currentTime = Cesium.JulianDate.fromDate(utc);
+    document.getElementById("timeLbl").textContent = `${String(Math.floor(h)).padStart(2,"0")}:${String(Math.round((h%1)*60)).padStart(2,"0")}`;
+    document.getElementById("dateLbl").textContent = d.toLocaleDateString("nl-NL", { day:"numeric", month:"long", timeZone:"UTC" });
+  }
+  tEl.oninput = dEl.oninput = setSun; viewer.clock.shouldAnimate = false; setSun();
+
+  // Viewpoints: [name, lon, lat, heading, pitch, range]
+  const VIEWS = [
+    ["Overzicht", 5.665, 51.972, 345, -32, 9500],
+    ["Centrum & Markt", 5.6652, 51.9690, 20, -28, 650],
+    ["Campus", 5.6640, 51.9862, 205, -28, 1300],
+    ["Wageningse Berg", 5.6820, 51.9625, 215, -18, 1600],
+    ["Rijn & uiterwaarden", 5.6470, 51.9555, 285, -22, 2600],
+    ["Binnenveld", 5.6150, 51.9950, 35, -24, 3600],
+  ];
+  const vEl = document.getElementById("views");
+  function go([_, lon, lat, hd, p, r], dur = 2.5) {
+    const c = Cesium.Cartographic.fromDegrees(lon, lat);
+    const hgt = globe.getHeight(c) ?? 55;
+    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(lon, lat, hgt), 1), {
+      offset: new Cesium.HeadingPitchRange(Cesium.Math.toRadians(hd), Cesium.Math.toRadians(p), r), duration: dur });
+  }
+  VIEWS.forEach(v => { const b = document.createElement("button"); b.className = "v"; b.textContent = v[0]; b.onclick = () => go(v); vEl.appendChild(b); });
+  go(VIEWS[0], 0);
+
+  // Building info on click
+  const info = document.getElementById("info");
+  const handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
+  let selected; const prevColor = new Cesium.Color();
+  handler.setInputAction(m => {
+    if (selected) { selected.color = prevColor; selected = undefined; }
+    const f = scene.pick(m.position);
+    if (!(f instanceof Cesium.Cesium3DTileFeature)) { info.style.display = "none"; return; }
+    selected = f; Cesium.Color.clone(f.color, prevColor); f.color = Cesium.Color.fromCssColorString("#c9e27a");
+    const g = k => f.getProperty(k);
+    if (f.tileset === trees) {
+      const ok = v => v !== undefined && v !== null && v !== "" && v !== -1;
+      const soort = g("soort"), wet = g("wetenschappelijk");
+      info.innerHTML = `<b>${ok(soort) ? soort[0].toUpperCase() + soort.slice(1) : "Boom"}</b>${ok(wet) ? `<div style="color:var(--muted);font-style:italic;margin:-4px 0 6px">${wet}</div>` : ""}<table>
+        <tr><td>Hoogte</td><td>${g("hoogte_m").toFixed(1)} m</td></tr>
+        <tr><td>Kroon</td><td>${g("kroon_m").toFixed(1)} m breed</td></tr>
+        <tr><td>Plantjaar</td><td>${ok(g("plantjaar")) ? g("plantjaar") : "–"}</td></tr>
+        ${g("monumentaal") ? '<tr><td>Status</td><td>Monumentale boom</td></tr>' : ""}
+        <tr><td>Bron</td><td style="font-size:11px">${g("bron")}</td></tr></table>`;
+      info.style.display = "block"; return;
+    }
+    const yr = g("oorspronkelijkbouwjaar"), fl = g("b3_bouwlagen"), nok = g("b3_h_nok"), mv = g("b3_h_maaiveld");
+    const dak = { "slanted":"schuin", "single horizontal":"plat", "horizontal":"plat", "multiple horizontal":"meerdere platte delen" }[g("b3_dak_type")] || g("b3_dak_type") || "–";
+    const ok = v => v !== undefined && v !== null && v < 1e30 && v < 2e9;
+    info.innerHTML = `<b>Pand</b><table>
+      <tr><td>Bouwjaar</td><td>${ok(yr) ? yr : "–"}</td></tr>
+      <tr><td>Bouwlagen</td><td>${ok(fl) ? fl : "–"}</td></tr>
+      <tr><td>Hoogte (nok)</td><td>${ok(nok) && ok(mv) ? (nok - mv).toFixed(1) + " m" : "–"}</td></tr>
+      <tr><td>Dak</td><td>${dak}</td></tr>
+      <tr><td>BAG-id</td><td style="font-size:10.5px">${(g("identificatie")||"").replace("NL.IMBAG.Pand.","")}</td></tr></table>`;
+    info.style.display = "block";
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+})();
+</script>
+</body>
+</html>
